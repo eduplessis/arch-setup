@@ -1,0 +1,15 @@
+# Disable USB autosuspend for input devices
+# Prevents mouse/keyboard lag and delay issues
+# See: https://wiki.archlinux.org/title/Power_management#USB_autosuspend
+
+# Cooler Master MM710 Gaming Mouse
+# Vendor: 2516, Product: 012f
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="2516", ATTR{idProduct}=="012f", ATTR{power/control}="on"
+
+# 68EC-S Keyboard
+# Vendor: 0483, Product: 5232
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="0483", ATTR{idProduct}=="5232", ATTR{power/control}="on"
+
+# Alternative: Disable autosuspend for all USB HID (mouse/keyboard) devices
+# Uncomment the line below to apply to all input devices:
+# ACTION=="add", SUBSYSTEM=="usb", ATTR{bInterfaceClass}=="03", ATTR{bInterfaceSubClass}=="01", ATTR{power/autosuspend}="-1"

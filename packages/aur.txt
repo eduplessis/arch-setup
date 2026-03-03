@@ -1,0 +1,12 @@
+# Launcher
+vicinae
+
+# Browsers
+zen-browser-bin
+
+# Development
+code
+
+# DMS Dependencies (if any AUR packages needed)
+# quickshell
+# matugen

@@ -1,0 +1,82 @@
+# Window Manager & Display
+niri
+wlroots
+greetd
+greetd-tuigreet
+
+# Shell & Desktop Environment
+DankMaterialShell
+polkit-gnome
+gnome-keyring
+
+# Essential Tools
+base-devel
+git
+vim
+micro
+
+# Audio
+pipewire
+pipewire-pulse
+pipewire-jack
+wireplumber
+pavucontrol
+
+# Network
+networkmanager
+network-manager-applet
+
+# Bluetooth
+bluez
+bluez-utils
+blueman
+
+# Power Management
+power-profiles-daemon
+
+# Fonts
+ttf-dejavu
+ttf-liberation
+ttf-font-awesome
+noto-fonts
+noto-fonts-cjk
+noto-fonts-emoji
+
+# Theming
+elementary-icon-theme
+
+# Utilities
+wl-clipboard
+grim
+slurp
+mako
+libnotify
+xdg-desktop-portal
+xdg-desktop-portal-gnome
+xdg-user-dirs
+
+# Applications
+firefox
+thunar
+podman
+podman-compose
+slirp4netns
+fuse-overlayfs
+
+# Display/Monitor Management
+brightnessctl
+
+# File Management
+xdg-utils
+
+# Authentication
+gnome-keyring
+libsecret
+
+# Misc
+bash-completion
+man-db
+man-pages
+
+# bolt (for eGPU support)
+bolt
