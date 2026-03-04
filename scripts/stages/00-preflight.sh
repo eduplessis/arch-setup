@@ -24,7 +24,6 @@ require_sudo
 [[ -f "$ARCH_SETUP_ROOT/packages/official.txt" ]] || die "Missing packages/official.txt"
 [[ -f "$ARCH_SETUP_ROOT/configs/niri/config.kdl" ]] || die "Missing niri config"
 [[ -f "$ARCH_SETUP_ROOT/configs/DankMaterialShell/settings.json" ]] || die "Missing DMS settings"
-[[ -f "$ARCH_SETUP_ROOT/$GREETD_CONFIG_RELATIVE_PATH" ]] || die "Missing greetd config: $GREETD_CONFIG_RELATIVE_PATH"
 [[ -f "$ARCH_SETUP_ROOT/$USB_UDEV_RULE_SOURCE" ]] || die "Missing udev rule file: $USB_UDEV_RULE_SOURCE"
 
 if [[ "$ARCH_SETUP_SKIP_AUR" != "1" ]]; then

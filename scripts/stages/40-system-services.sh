@@ -11,11 +11,16 @@ load_profile
 log "Configuring system services..."
 require_sudo
 
-greetd_source="$ARCH_SETUP_ROOT/$GREETD_CONFIG_RELATIVE_PATH"
-[[ -f "$greetd_source" ]] || die "greetd config source is missing: $greetd_source"
+if [[ "$ARCH_SETUP_DRY_RUN" != "1" ]] && ! command -v dms >/dev/null 2>&1; then
+  die "dms command not found. Ensure DankMaterialShell is installed before this stage."
+fi
 
 backup_system_file "/etc/greetd/config.toml"
-sudo_cmd install -Dm644 "$greetd_source" /etc/greetd/config.toml
+
+log "Configuring greetd with DankGreeter..."
+run_cmd dms greeter enable
+run_cmd dms greeter sync
+sudo_cmd systemctl enable --now greetd
 
 for svc in "${SYSTEM_SERVICES[@]}"; do
   log "Enabling system service: $svc"

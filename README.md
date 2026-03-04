@@ -19,7 +19,7 @@ It does **not** partition disks, install the base system, or configure a bootloa
 - OS: Arch Linux
 - Compositor: niri
 - Shell: Dank Material Shell (DMS)
-- Display manager: greetd
+- Display manager: greetd + DankGreeter
 
 ## What the Installer Does
 
@@ -27,7 +27,7 @@ It does **not** partition disks, install the base system, or configure a bootloa
 2. Installs official packages from `packages/official.txt`.
 3. Installs AUR packages from `packages/aur.txt`.
 4. Backs up and deploys configs from `configs/`.
-5. Configures system services and greetd.
+5. Configures system services and DankGreeter (`dms greeter enable/sync`).
 6. Configures user services.
 7. Applies profile hardware settings (keyboard + USB autosuspend rule).
 8. Runs verification and prints pass/warn/fail summary.
@@ -139,9 +139,11 @@ cp configs/local/.env.example configs/local/.env
 
 System services:
 - `power-profiles-daemon`
-- `greetd`
 - `NetworkManager`
 - `bluetooth`
+
+Display manager:
+- `greetd` managed via `dms greeter enable` and `dms greeter sync`
 
 User services:
 - `pipewire`
@@ -192,8 +194,6 @@ For immediate runtime USB fix (without reboot), use:
 │   ├── niri/
 │   ├── DankMaterialShell/
 │   ├── environment.d/
-│   ├── greetd/
-│   │   └── config.toml
 │   └── local/
 │       └── .env.example
 └── udev/
@@ -224,4 +224,11 @@ For immediate runtime USB fix (without reboot), use:
 
 ```bash
 cat ~/.local/state/arch-setup/failed-aur-packages.txt
+```
+
+### Re-sync DankGreeter manually
+
+```bash
+dms greeter enable
+dms greeter sync
 ```

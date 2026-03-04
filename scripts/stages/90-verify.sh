@@ -78,6 +78,23 @@ check_file_present() {
   fi
 }
 
+check_file_contains() {
+  local file="$1"
+  local pattern="$2"
+  local label="$3"
+
+  if [[ ! -f "$file" ]]; then
+    report FAIL file "$label" "missing file"
+    return
+  fi
+
+  if grep -Eq "$pattern" "$file"; then
+    report PASS file "$label" "matched"
+  else
+    report FAIL file "$label" "missing expected content"
+  fi
+}
+
 printf '\nVerification Results\n'
 printf '%-5s %-10s %-32s %s\n' "-----" "----------" "--------------------------------" "----------------"
 
@@ -92,6 +109,7 @@ done
 for svc in "${SYSTEM_SERVICES[@]}"; do
   check_system_service "$svc"
 done
+check_system_service "greetd"
 
 for svc in "${USER_SERVICES[@]}"; do
   check_user_service "$svc"
@@ -101,7 +119,14 @@ check_file_present "$HOME/.config/niri/config.kdl" "1"
 check_file_present "$HOME/.config/DankMaterialShell/settings.json" "1"
 check_file_present "$HOME/.config/environment.d/wayland.conf" "1"
 check_file_present "/etc/greetd/config.toml" "1"
+check_file_contains "/etc/greetd/config.toml" "dms-greeter" "/etc/greetd/config.toml:dms-greeter"
 check_file_present "/etc/udev/rules.d/50-usb-no-autosuspend.rules" "1"
+
+if dms greeter status >/dev/null 2>&1; then
+  report PASS greeter "dms greeter status" "ok"
+else
+  report FAIL greeter "dms greeter status" "not healthy"
+fi
 
 if command -v localectl >/dev/null 2>&1; then
   if localectl status | grep -q "X11 Layout: ${KEYBOARD_LAYOUT}"; then

@@ -1,6 +1,9 @@
 # Launcher
 vicinae
 
+# Display Manager Greeter
+greetd-dms-greeter-git
+
 # Browsers
 zen-browser-bin
 

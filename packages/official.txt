@@ -2,7 +2,6 @@
 niri
 wlroots
 greetd
-greetd-tuigreet
 
 # Shell & Desktop Environment
 DankMaterialShell
