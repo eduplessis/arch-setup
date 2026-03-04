@@ -1,256 +1,227 @@
-# Arch Linux + niri + DMS Setup
+# Arch Linux Reinstall Automation (niri + DMS)
 
-Automated setup script for Arch Linux with niri compositor and DankLinux Material Shell (DMS).
+Deterministic post-install automation for restoring this Arch Linux setup after a fresh install.
 
-## Overview
+## Scope
 
-This repository contains everything needed to replicate my Arch Linux setup on a fresh install.
+This repository automates **post-install configuration only**.
 
-**Target Hardware:** Framework Laptop with AMD Ryzen 7 7840U
+It assumes:
+- Arch Linux is already installed and bootable.
+- A normal user with sudo access already exists.
+- You can log into that user and run shell commands.
 
-**Software Stack:**
-- **OS:** Arch Linux
-- **Compositor:** niri (Wayland)
-- **Shell:** DankLinux Material Shell (DMS)
-- **Display Manager:** greetd
-- **Audio:** PipeWire + WirePlumber
-- **Launcher:** Vicinae
-- **Browser:** Zen Browser (Firefox-based)
-- **Editor:** VS Code
-- **Containers:** Podman (rootless)
+It does **not** partition disks, install the base system, or configure a bootloader.
 
-## Features
+## Default Target
 
-### 🖥️ Display
-- HiDPI support with 1.25 scale
-- 2560x1600 @ 240Hz (Framework laptop display)
-- Proper scaling for GTK, Qt, and Electron apps
+- Hardware profile: `framework-7840u`
+- OS: Arch Linux
+- Compositor: niri
+- Shell: Dank Material Shell (DMS)
+- Display manager: greetd
 
-### ⌨️ Input
-- **Keyboard:** Canadian Multilingual Standard (CAN/CSA)
-- **Touchpad:** Natural scroll, tap to click
-- **USB fixes:** No autosuspend lag on mouse/keyboard
+## What the Installer Does
 
-### 🎨 Theming
-- Dynamic theming with matugen
-- Elementary icon theme
-- Rounded corners (12px radius)
+1. Runs preflight checks (Arch, sudo, network, required files).
+2. Installs official packages from `packages/official.txt`.
+3. Installs AUR packages from `packages/aur.txt`.
+4. Backs up and deploys configs from `configs/`.
+5. Configures system services and greetd.
+6. Configures user services.
+7. Applies profile hardware settings (keyboard + USB autosuspend rule).
+8. Runs verification and prints pass/warn/fail summary.
 
-### ⚡ Power Management
-- power-profiles-daemon
-- USB autosuspend disabled for input devices
-- Battery optimizations
-
-## Quick Start
-
-### 1. Install Arch Linux
-
-Follow the [Arch Installation Guide](https://wiki.archlinux.org/title/Installation_guide) with these notes:
+## Quick Reinstall
 
 ```bash
-# Create a user
-useradd -m -G wheel -s /bin/bash eduplessis
-passwd eduplessis
+sudo pacman -S --needed git
 
-# Enable sudo for wheel group
-EDITOR=vim visudo
-# Uncomment: %wheel ALL=(ALL:ALL) ALL
-```
-
-### 2. Clone and Run Setup
-
-```bash
-# Install git first
-sudo pacman -S git
-
-# Clone this repository
-git clone https://github.com/yourusername/arch-setup.git ~/.config/arch-setup
+git clone <repo-url> ~/.config/arch-setup
 cd ~/.config/arch-setup
 
-# Run the installer
-./install.sh
+./install.sh all
 ```
 
-### 3. Reboot
+Then reboot:
 
 ```bash
 sudo reboot
 ```
 
-## Post-Installation
-
-### First Login
-
-1. Login at greetd
-2. niri will start automatically
-3. Vicinae launcher should start (Mod+Space to open)
-
-### Essential Commands
+## CLI
 
 ```bash
-# Lock screen
-dms ipc call lock lock
-
-# Control brightness
-dms ipc brightness increment 5
-dms ipc brightness decrement 5
-
-# Idle inhibit (prevent screen off)
-dms ipc inhibit enable
-dms ipc inhibit disable
-
-# Display power
-dms dpms off
-dms dpms on
+./install.sh [all] [options]
+./install.sh stage <name> [options]
+./install.sh verify [options]
 ```
 
-## Keyboard Layout
+Options:
+- `--profile <name>`: Select hardware profile (default: `framework-7840u`)
+- `--dry-run`: Print planned actions without changing the system
+- `--force`: Re-run completed stages in `all`
+- `--no-aur`: Skip AUR stage
+- `--strict-aur`: Abort when any AUR package fails
+- `--log-file <path>`: Write logs to a custom path
 
-**Canadian Multilingual Standard (CAN/CSA Z243.200-92)**
+Examples:
 
-| Key Combination | Result |
-|-----------------|--------|
-| `'` + `e` | é |
-| `` ` `` + `e` | è |
-| `^` + `e` | ê |
-| `¨` + `e` | ë |
-| AltGr + 5 | € |
+```bash
+# Full run
+./install.sh all
 
-## Key Bindings
+# Retry only config deployment
+./install.sh stage 30-configs
 
-| Key | Action |
-|-----|--------|
-| Mod+Space | Open launcher (Vicinae) |
-| Mod+Alt+L | Lock screen |
-| Mod+Shift+P | Power off monitors |
-| Mod+M | Task manager |
-| Mod+N | Notification center |
-| Mod+[1-9] | Switch to workspace |
-| Mod+Shift+[1-9] | Move window to workspace |
+# Verify current state only
+./install.sh verify
+
+# Full run, skip AUR
+./install.sh all --no-aur
+```
+
+## Stage List
+
+- `00-preflight`
+- `10-packages-official`
+- `20-packages-aur`
+- `30-configs`
+- `40-system-services`
+- `50-user-services`
+- `60-hardware`
+- `90-verify`
+
+When running `all`, completed stages are skipped by default. Use `--force` to re-run them.
+
+## Failure Behavior
+
+### Official packages
+
+Missing official package entries fail the run, so broken repositories are caught early.
+
+### AUR packages
+
+Default behavior is continue-on-fail:
+- The stage finishes.
+- Failed AUR packages are recorded in `~/.local/state/arch-setup/failed-aur-packages.txt`.
+- Run is marked degraded (`~/.local/state/arch-setup/degraded`).
+
+Use `--strict-aur` if you want fail-fast behavior.
+
+## Backups
+
+Managed config/system files are backed up before replacement:
+
+- Backup root: `~/.local/state/arch-setup/backups/<timestamp>/`
+- Stage markers: `~/.local/state/arch-setup/stages/`
+- Logs: `~/.local/state/arch-setup/install-<timestamp>.log`
+- Latest log symlink: `~/.local/state/arch-setup/latest.log`
+
+## Profiles
+
+Profiles are in `profiles/`:
+
+- `common.env`: shared defaults
+- `framework-7840u.env`: Framework-specific overrides
+
+### Local machine-only overrides (secrets and host-specific values)
+
+Copy and edit:
+
+```bash
+cp configs/local/.env.example configs/local/.env
+```
+
+`configs/local/.env` is intentionally gitignored and loaded automatically during runs.
+
+## Managed Service Targets
+
+System services:
+- `power-profiles-daemon`
+- `greetd`
+- `NetworkManager`
+- `bluetooth`
+
+User services:
+- `pipewire`
+- `pipewire-pulse`
+- `wireplumber`
+- `podman.socket`
+
+## Hardware Settings (framework-7840u)
+
+- Keyboard layout: `ca`
+- Keyboard variant: `multix` (Canadian Multilingual Standard)
+- USB autosuspend exception rule installed from:
+  - `udev/50-usb-no-autosuspend.rules`
+
+For immediate runtime USB fix (without reboot), use:
+
+```bash
+./scripts/apply-usb-fix.sh
+```
+
+## Repository Layout
+
+```text
+.
+├── install.sh
+├── README.md
+├── .gitignore
+├── packages/
+│   ├── official.txt
+│   └── aur.txt
+├── profiles/
+│   ├── common.env
+│   └── framework-7840u.env
+├── scripts/
+│   ├── apply-usb-fix.sh
+│   ├── lib/
+│   │   └── common.sh
+│   └── stages/
+│       ├── 00-preflight.sh
+│       ├── 10-packages-official.sh
+│       ├── 20-packages-aur.sh
+│       ├── 30-configs.sh
+│       ├── 40-system-services.sh
+│       ├── 50-user-services.sh
+│       ├── 60-hardware.sh
+│       └── 90-verify.sh
+├── configs/
+│   ├── niri/
+│   ├── DankMaterialShell/
+│   ├── environment.d/
+│   ├── greetd/
+│   │   └── config.toml
+│   └── local/
+│       └── .env.example
+└── udev/
+    └── 50-usb-no-autosuspend.rules
+```
 
 ## Troubleshooting
 
-### Mouse/Keyboard Delay
-
-If input devices lag after the script:
+### Re-run verify only
 
 ```bash
-# Apply immediate fix
-./scripts/apply-usb-fix.sh
-
-# Check device paths
-ls /sys/bus/usb/devices/*/product
-
-# Edit udev rule with correct paths
-sudo vim /etc/udev/rules.d/50-usb-no-autosuspend.rules
-sudo udevadm control --reload-rules
+./install.sh verify
 ```
 
-### Display Issues
+### Re-run only failed stage
 
 ```bash
-# Check outputs
-niri msg outputs
-
-# View logs
-journalctl --user -u niri
+./install.sh stage <stage-name>
 ```
 
-### Audio Not Working
+### Re-run everything regardless of stage markers
 
 ```bash
-# Restart PipeWire
-systemctl --user restart pipewire pipewire-pulse wireplumber
+./install.sh all --force
 ```
 
-### Podman Issues
+### Check failed AUR packages
 
 ```bash
-# Check podman status
-podman info
-
-# Rootless mode not working (requires logout/login after first install)
-podman run hello-world
-
-# Enable podman socket for Docker compatibility
-systemctl --user enable --now podman.socket
+cat ~/.local/state/arch-setup/failed-aur-packages.txt
 ```
-
-## Applications Included
-
-### Development
-- **VS Code** - Code editor with Wayland support
-- **Podman** - Rootless container engine
-
-### Web Browsing
-- **Zen Browser** - Firefox-based browser optimized for vertical tabs
-- **Firefox** - Backup browser
-
-### System
-- **Vicinae** - Application launcher
-- **Thunar** - File manager
-
-## Repository Structure
-
-```
-.
-├── install.sh              # Main installation script
-├── README.md               # This file
-├── packages/
-│   ├── official.txt        # Pacman packages
-│   └── aur.txt             # AUR packages
-├── udev/
-│   └── 50-usb-no-autosuspend.rules  # USB fixes
-├── scripts/
-│   └── apply-usb-fix.sh    # Manual USB fix script
-└── configs/
-    ├── niri/               # niri window manager config
-    │   ├── config.kdl
-    │   └── dms/
-    ├── DankMaterialShell/  # DMS settings
-    │   └── settings.json
-    └── environment.d/      # Environment variables
-        └── wayland.conf
-```
-
-## Customization
-
-### Adding New USB Devices
-
-Edit `udev/50-usb-no-autosuspend.rules`:
-
-```bash
-# Find your device
-lsusb
-
-# Add rule
-ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="XXXX", ATTR{idProduct}=="XXXX", ATTR{power/control}="on"
-```
-
-### Changing Keyboard Layout
-
-Edit `configs/niri/config.kdl`:
-
-```kdl
-keyboard {
-    xkb {
-        layout "ca"       # Layout code
-        variant "multix"  # Variant (optional)
-    }
-}
-```
-
-Then run:
-```bash
-sudo localectl set-x11-keymap ca "" multix
-```
-
-## Credits
-
-- [niri](https://github.com/YaLTeR/niri) - Scrollable-tiling Wayland compositor
-- [DankLinux Material Shell](https://github.com/dank-linux) - Material Design shell for Wayland
-- [Vicinae](https://aur.archlinux.org/packages/vicinae) - Launcher for Wayland
-
-## License
-
-MIT License - Feel free to use and modify for your own setup.

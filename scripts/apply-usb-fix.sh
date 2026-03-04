@@ -1,29 +1,62 @@
-#!/bin/bash
-#
-# Apply USB autosuspend fix for current session
-# Run this if you need immediate fix without rebooting
-#
+#!/usr/bin/env bash
 
-set -e
+set -euo pipefail
 
-echo "Applying USB autosuspend fixes..."
+TARGET_IDS=(
+  "2516:012f"
+  "0483:5232"
+)
 
-# Cooler Master MM710 Gaming Mouse
-echo "on" | sudo tee /sys/bus/usb/devices/7-1.1.2/power/control 2>/dev/null || echo "Mouse device not found (may need to find correct path)"
+echo "Applying USB autosuspend fix..."
 
-# 68EC-S Keyboard
-echo "on" | sudo tee /sys/bus/usb/devices/7-1.1.3/power/control 2>/dev/null || echo "Keyboard device not found (may need to find correct path)"
+set_device_on() {
+  local dev_path="$1"
 
-# Alternative: Find and fix all input devices
+  if [[ ! -f "$dev_path/power/control" ]]; then
+    return
+  fi
+
+  echo "on" | sudo tee "$dev_path/power/control" >/dev/null
+}
+
+matched=0
 for dev in /sys/bus/usb/devices/*; do
-    if [ -f "$dev/product" ]; then
-        product=$(cat "$dev/product" 2>/dev/null | tr '[:upper:]' '[:lower:]')
-        if [[ "$product" == *"mouse"* ]] || [[ "$product" == *"keyboard"* ]] || [[ "$product" == *"mm710"* ]] || [[ "$product" == *"68ec"* ]]; then
-            echo "Found: $(cat $dev/product)"
-            echo "on" | sudo tee "$dev/power/control" 2>/dev/null || true
-            echo "  -> Fixed"
-        fi
+  [[ -f "$dev/idVendor" && -f "$dev/idProduct" ]] || continue
+
+  vendor="$(<"$dev/idVendor")"
+  product="$(<"$dev/idProduct")"
+  id="$vendor:$product"
+
+  for target in "${TARGET_IDS[@]}"; do
+    if [[ "$id" == "$target" ]]; then
+      name="unknown"
+      [[ -f "$dev/product" ]] && name="$(<"$dev/product")"
+      echo "Found target device $id ($name)"
+      set_device_on "$dev"
+      echo "  -> power/control set to on"
+      matched=$((matched + 1))
+      break
     fi
+  done
 done
 
-echo "Done!"
+if [[ "$matched" -eq 0 ]]; then
+  echo "No known device IDs found, trying generic input-device heuristic..."
+  for dev in /sys/bus/usb/devices/*; do
+    [[ -f "$dev/product" && -f "$dev/power/control" ]] || continue
+    product_name="$(tr '[:upper:]' '[:lower:]' < "$dev/product")"
+
+    if [[ "$product_name" == *"mouse"* || "$product_name" == *"keyboard"* ]]; then
+      echo "Matched by name: $(<"$dev/product")"
+      set_device_on "$dev"
+      echo "  -> power/control set to on"
+      matched=$((matched + 1))
+    fi
+  done
+fi
+
+if [[ "$matched" -eq 0 ]]; then
+  echo "No USB input devices were updated."
+else
+  echo "Done. Updated $matched device(s)."
+fi

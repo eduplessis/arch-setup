@@ -1,271 +1,299 @@
-#!/bin/bash
-#
-# Arch Linux Setup Script
-# Configures niri + DMS (DankLinux Material Shell) environment
-# For Framework Laptop with AMD Ryzen 7 7840U
-#
+#!/usr/bin/env bash
 
-set -e
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STAGES_DIR="$SCRIPT_DIR/scripts/stages"
 
-# Logging
+DEFAULT_PROFILE="framework-7840u"
+DEFAULT_STAGES=(
+  "00-preflight"
+  "10-packages-official"
+  "20-packages-aur"
+  "30-configs"
+  "40-system-services"
+  "50-user-services"
+  "60-hardware"
+  "90-verify"
+)
+
+COMMAND="all"
+STAGE_NAME=""
+ARCH_SETUP_PROFILE="$DEFAULT_PROFILE"
+ARCH_SETUP_DRY_RUN=0
+ARCH_SETUP_FORCE=0
+ARCH_SETUP_SKIP_AUR=0
+ARCH_SETUP_STRICT_AUR=0
+ARCH_SETUP_LOG_FILE=""
+
+RUN_ID="$(date +%Y%m%d_%H%M%S)"
+ARCH_SETUP_STATE_DIR="${HOME}/.local/state/arch-setup"
+ARCH_SETUP_STAGE_STATE_DIR="$ARCH_SETUP_STATE_DIR/stages"
+ARCH_SETUP_BACKUP_ROOT="$ARCH_SETUP_STATE_DIR/backups/$RUN_ID"
+ARCH_SETUP_FAILED_AUR_FILE="$ARCH_SETUP_STATE_DIR/failed-aur-packages.txt"
+ARCH_SETUP_DEGRADED_FILE="$ARCH_SETUP_STATE_DIR/degraded"
+ARCH_SETUP_ROOT="$SCRIPT_DIR"
+
+SUDO_KEEPALIVE_PID=""
+
+usage() {
+  cat << 'USAGE'
+Usage:
+  ./install.sh [all] [options]
+  ./install.sh stage <name> [options]
+  ./install.sh verify [options]
+
+Options:
+  --profile <name>      Hardware profile (default: framework-7840u)
+  --dry-run             Print actions without applying changes
+  --force               Re-run completed stages in "all"
+  --no-aur              Skip AUR stage
+  --strict-aur          Fail immediately if any AUR package fails
+  --log-file <path>     Explicit log file path
+  -h, --help            Show this help
+
+Examples:
+  ./install.sh all
+  ./install.sh stage 30-configs --profile framework-7840u
+  ./install.sh verify
+USAGE
+}
+
 log() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+  printf '[INFO] %s\n' "$*"
 }
 
 warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
+  printf '[WARN] %s\n' "$*"
 }
 
-error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-    exit 1
+die() {
+  printf '[ERROR] %s\n' "$*" >&2
+  exit 1
 }
 
-success() {
-    echo -e "${GREEN}[OK]${NC} $1"
+ensure_sudo() {
+  if [[ "$ARCH_SETUP_DRY_RUN" == "1" ]]; then
+    return
+  fi
+
+  if ! sudo -n true 2>/dev/null; then
+    log "This installer requires sudo access."
+    sudo -v
+  fi
 }
 
-# Check if running on Arch Linux
-check_arch() {
-    if [[ ! -f /etc/os-release ]]; then
-        error "Cannot detect OS. Are you running Arch Linux?"
-    fi
-    
-    if ! grep -q "^ID=arch" /etc/os-release; then
-        error "This script is designed for Arch Linux only."
-    fi
-    
-    success "Arch Linux detected"
+start_sudo_keepalive() {
+  if [[ "$ARCH_SETUP_DRY_RUN" == "1" ]]; then
+    return
+  fi
+
+  while true; do
+    sudo -n true
+    sleep 60
+  done >/dev/null 2>&1 &
+  SUDO_KEEPALIVE_PID="$!"
 }
 
-# Check for sudo access
-check_sudo() {
-    if ! sudo -n true 2>/dev/null; then
-        log "This script requires sudo privileges"
-        sudo -v || error "Failed to obtain sudo access"
-    fi
-    # Keep sudo alive
-    while true; do
-        sudo -n true
-        sleep 60
-    done 2>/dev/null &
-    SUDO_PID=$!
-    success "Sudo access confirmed"
-}
-
-# Update system
-update_system() {
-    log "Updating system packages..."
-    sudo pacman -Syu --noconfirm
-    success "System updated"
-}
-
-# Install yay (AUR helper) if not present
-install_yay() {
-    if command -v yay &>/dev/null; then
-        success "yay already installed"
-        return
-    fi
-    
-    log "Installing yay (AUR helper)..."
-    sudo pacman -S --needed --noconfirm git base-devel
-    
-    cd /tmp
-    git clone https://aur.archlinux.org/yay.git
-    cd yay
-    makepkg -si --noconfirm
-    cd "$SCRIPT_DIR"
-    rm -rf /tmp/yay
-    
-    success "yay installed"
-}
-
-# Install packages from official repos
-install_official_packages() {
-    log "Installing packages from official repositories..."
-    
-    sudo pacman -S --needed --noconfirm - < "$SCRIPT_DIR/packages/official.txt"
-    success "Official packages installed"
-}
-
-# Install packages from AUR
-install_aur_packages() {
-    log "Installing AUR packages..."
-    
-    yay -S --needed --noconfirm - < "$SCRIPT_DIR/packages/aur.txt"
-    success "AUR packages installed"
-}
-
-# Configure keyboard layout (Canadian Multilingual)
-configure_keyboard() {
-    log "Configuring Canadian Multilingual keyboard layout..."
-    sudo localectl set-x11-keymap ca "" multix
-    success "Keyboard layout configured"
-}
-
-# Configure USB autosuspend fix for mouse and keyboard
-configure_usb_autosuspend() {
-    log "Configuring USB autosuspend fixes..."
-    
-    sudo cp "$SCRIPT_DIR/udev/50-usb-no-autosuspend.rules" /etc/udev/rules.d/
-    sudo udevadm control --reload-rules
-    
-    # Trigger for existing devices
-    sudo udevadm trigger --attr-match=idVendor=2516 --attr-match=idProduct=012f 2>/dev/null || true
-    sudo udevadm trigger --attr-match=idVendor=0483 --attr-match=idProduct=5232 2>/dev/null || true
-    
-    success "USB autosuspend fixes applied"
-}
-
-# Copy configuration files
-setup_configs() {
-    log "Setting up configuration files..."
-    
-    # Backup existing configs
-    if [[ -d ~/.config/niri ]]; then
-        BACKUP_DIR="$HOME/.config/niri.backup.$(date +%Y%m%d_%H%M%S)"
-        mv ~/.config/niri "$BACKUP_DIR"
-        warn "Existing niri config backed up to $BACKUP_DIR"
-    fi
-    
-    # Copy niri config
-    cp -r "$SCRIPT_DIR/configs/niri" ~/.config/
-    
-    # Copy DMS config
-    mkdir -p ~/.config/DankMaterialShell
-    cp "$SCRIPT_DIR/configs/DankMaterialShell/settings.json" ~/.config/DankMaterialShell/
-    
-    # Copy environment.d
-    mkdir -p ~/.config/environment.d
-    cp "$SCRIPT_DIR/configs/environment.d/"*.conf ~/.config/environment.d/ 2>/dev/null || true
-    
-    success "Configuration files installed"
-}
-
-# Enable system services
-enable_services() {
-    log "Enabling system services..."
-    
-    # Power management
-    sudo systemctl enable --now power-profiles-daemon
-    
-    # Audio
-    systemctl --user enable --now pipewire pipewire-pulse wireplumber
-    
-    # Display manager (greetd)
-    sudo systemctl enable --now greetd
-    
-    # Podman (rootless containers)
-    systemctl --user enable --now podman.socket
-    
-    success "Services enabled"
-}
-
-# Configure podman
-setup_podman() {
-    log "Configuring Podman..."
-    
-    # Enable rootless podman
-    sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 "$USER" 2>/dev/null || true
-    
-    # Create podman config dir
-    mkdir -p ~/.config/containers
-    
-    # Basic containers.conf
-    cat > ~/.config/containers/containers.conf << 'EOF'
-[containers]
-netns="slirp4netns"
-EOF
-    
-    success "Podman configured"
-}
-
-# Setup greetd
-setup_greetd() {
-    log "Configuring greetd..."
-    
-    # Create greetd config if it doesn't exist
-    if [[ ! -f /etc/greetd/config.toml ]]; then
-        sudo mkdir -p /etc/greetd
-        sudo tee /etc/greetd/config.toml > /dev/null << 'EOF'
-[terminal]
-vt = 1
-
-[default_session]
-command = "agreety --cmd niri-session"
-user = "greeter"
-EOF
-    fi
-    
-    success "greetd configured"
-}
-
-# Post-install message
-post_install() {
-    echo ""
-    echo "==================================="
-    echo "  Installation Complete!"
-    echo "==================================="
-    echo ""
-    echo "Next steps:"
-    echo "  1. Reboot your system: sudo reboot"
-    echo "  2. Login at greetd and niri will start automatically"
-    echo "  3. Run 'vicinae server' if the launcher doesn't start"
-    echo ""
-    echo "Keyboard: Canadian Multilingual (CAN/CSA)"
-    echo "  - Dead keys for accents: ' + e = é"
-    echo "  - € on AltGr+5"
-    echo ""
-    echo "Key bindings:"
-    echo "  - Mod+Space: Open launcher (Vicinae)"
-    echo "  - Mod+Alt+L: Lock screen"
-    echo "  - Mod+Shift+P: Power off monitors"
-    echo ""
-    echo "For issues, check ~/.local/share/niri/niri.log"
-    echo ""
-}
-
-# Cleanup
 cleanup() {
-    if [[ -n "${SUDO_PID:-}" ]]; then
-        kill "$SUDO_PID" 2>/dev/null || true
-    fi
+  if [[ -n "$SUDO_KEEPALIVE_PID" ]]; then
+    kill "$SUDO_KEEPALIVE_PID" >/dev/null 2>&1 || true
+  fi
 }
 
 trap cleanup EXIT
 
-# Main installation
-main() {
-    echo "==================================="
-    echo "  Arch Linux + niri + DMS Setup"
-    echo "==================================="
-    echo ""
-    
-    check_arch
-    check_sudo
-    update_system
-    install_yay
-    install_official_packages
-    install_aur_packages
-    configure_keyboard
-    configure_usb_autosuspend
-    setup_configs
-    setup_greetd
-    setup_podman
-    enable_services
-    post_install
+normalize_stage_name() {
+  local raw="$1"
+  raw="${raw%.sh}"
+  printf '%s' "$raw"
 }
 
-# Run main if executed directly
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
-fi
+stage_exists() {
+  local stage="$1"
+  [[ -f "$STAGES_DIR/${stage}.sh" ]]
+}
+
+run_stage() {
+  local stage="$1"
+  local skip_allowed="$2"
+  local stage_file="$STAGES_DIR/${stage}.sh"
+  local marker="$ARCH_SETUP_STAGE_STATE_DIR/${stage}.done"
+
+  stage_exists "$stage" || die "Unknown stage: $stage"
+
+  if [[ "$skip_allowed" == "1" && "$ARCH_SETUP_FORCE" == "0" && -f "$marker" ]]; then
+    log "Skipping stage $stage (already completed). Use --force to rerun."
+    return
+  fi
+
+  log "Running stage: $stage"
+  if bash "$stage_file"; then
+    if [[ "$ARCH_SETUP_DRY_RUN" == "0" ]]; then
+      date -Is > "$marker"
+    fi
+    log "Stage complete: $stage"
+  else
+    die "Stage failed: $stage"
+  fi
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      all)
+        COMMAND="all"
+        shift
+        ;;
+      verify)
+        COMMAND="verify"
+        shift
+        ;;
+      stage)
+        COMMAND="stage"
+        shift
+        [[ $# -gt 0 ]] || die "Missing stage name after 'stage'."
+        STAGE_NAME="$(normalize_stage_name "$1")"
+        shift
+        ;;
+      --profile)
+        shift
+        [[ $# -gt 0 ]] || die "Missing value for --profile"
+        ARCH_SETUP_PROFILE="$1"
+        shift
+        ;;
+      --dry-run)
+        ARCH_SETUP_DRY_RUN=1
+        shift
+        ;;
+      --force)
+        ARCH_SETUP_FORCE=1
+        shift
+        ;;
+      --no-aur)
+        ARCH_SETUP_SKIP_AUR=1
+        shift
+        ;;
+      --strict-aur)
+        ARCH_SETUP_STRICT_AUR=1
+        shift
+        ;;
+      --log-file)
+        shift
+        [[ $# -gt 0 ]] || die "Missing value for --log-file"
+        ARCH_SETUP_LOG_FILE="$1"
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "Unknown argument: $1"
+        ;;
+    esac
+  done
+
+  if [[ "$COMMAND" == "stage" && -z "$STAGE_NAME" ]]; then
+    die "Stage name is required: ./install.sh stage <name>"
+  fi
+}
+
+setup_logging() {
+  if [[ -z "$ARCH_SETUP_LOG_FILE" ]]; then
+    ARCH_SETUP_LOG_FILE="$ARCH_SETUP_STATE_DIR/install-$RUN_ID.log"
+  fi
+
+  if [[ "$ARCH_SETUP_DRY_RUN" == "0" ]]; then
+    mkdir -p "$ARCH_SETUP_STATE_DIR" "$ARCH_SETUP_STAGE_STATE_DIR" "$ARCH_SETUP_BACKUP_ROOT"
+    mkdir -p "$(dirname "$ARCH_SETUP_LOG_FILE")"
+    exec > >(tee -a "$ARCH_SETUP_LOG_FILE") 2>&1
+    ln -sfn "$ARCH_SETUP_LOG_FILE" "$ARCH_SETUP_STATE_DIR/latest.log"
+  fi
+}
+
+print_run_context() {
+  log "Arch setup root: $ARCH_SETUP_ROOT"
+  log "Command: $COMMAND"
+  if [[ "$COMMAND" == "stage" ]]; then
+    log "Stage: $STAGE_NAME"
+  fi
+  log "Profile: $ARCH_SETUP_PROFILE"
+  log "Dry run: $ARCH_SETUP_DRY_RUN"
+  log "Force rerun: $ARCH_SETUP_FORCE"
+  log "Skip AUR: $ARCH_SETUP_SKIP_AUR"
+  log "Strict AUR: $ARCH_SETUP_STRICT_AUR"
+  log "State dir: $ARCH_SETUP_STATE_DIR"
+  log "Backup dir: $ARCH_SETUP_BACKUP_ROOT"
+  log "Log file: $ARCH_SETUP_LOG_FILE"
+}
+
+run_all() {
+  local stage
+  for stage in "${DEFAULT_STAGES[@]}"; do
+    run_stage "$stage" "1"
+  done
+}
+
+run_verify() {
+  run_stage "90-verify" "0"
+}
+
+run_single_stage() {
+  run_stage "$STAGE_NAME" "0"
+}
+
+print_completion_summary() {
+  log "Run complete."
+  if [[ -f "$ARCH_SETUP_DEGRADED_FILE" ]]; then
+    warn "Completed with degraded status (typically AUR failures)."
+    if [[ -f "$ARCH_SETUP_FAILED_AUR_FILE" ]]; then
+      warn "Failed AUR packages:"
+      sed 's/^/  - /' "$ARCH_SETUP_FAILED_AUR_FILE"
+    fi
+  fi
+
+  log "Detailed log: $ARCH_SETUP_LOG_FILE"
+  log "Backups: $ARCH_SETUP_BACKUP_ROOT"
+}
+
+main() {
+  parse_args "$@"
+  setup_logging
+
+  export ARCH_SETUP_ROOT
+  export ARCH_SETUP_PROFILE
+  export ARCH_SETUP_DRY_RUN
+  export ARCH_SETUP_FORCE
+  export ARCH_SETUP_SKIP_AUR
+  export ARCH_SETUP_STRICT_AUR
+  export ARCH_SETUP_LOG_FILE
+  export ARCH_SETUP_STATE_DIR
+  export ARCH_SETUP_STAGE_STATE_DIR
+  export ARCH_SETUP_BACKUP_ROOT
+  export ARCH_SETUP_FAILED_AUR_FILE
+  export ARCH_SETUP_DEGRADED_FILE
+
+  print_run_context
+  ensure_sudo
+  start_sudo_keepalive
+
+  case "$COMMAND" in
+    all)
+      run_all
+      ;;
+    verify)
+      run_verify
+      ;;
+    stage)
+      run_single_stage
+      ;;
+    *)
+      die "Unsupported command: $COMMAND"
+      ;;
+  esac
+
+  print_completion_summary
+}
+
+main "$@"
